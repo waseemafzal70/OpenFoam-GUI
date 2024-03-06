@@ -1,20 +1,24 @@
 import os
 import shutil
-import subprocess
-
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QPushButton, QLabel, QComboBox, QRadioButton, QButtonGroup, \
-    QMessageBox, QApplication, QTextEdit
-
-from EditControlDictWindow import EditControlDictWindow
-from EditFvSchemesWindow import EditFvSchemesWindow
+from PyQt6.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QLabel,
+    QRadioButton,
+    QButtonGroup,
+    QComboBox,
+    QPushButton,
+    QMessageBox,
+)
 
 
 class OptionsWindow(QDialog):
-    def __init__(self, project_directory):
-        super().__init__()
+    def __init__(self, current_project_directory, parent=None):
+        super().__init__(parent)
         self.setWindowTitle("Options")
         self.setGeometry(200, 200, 700, 400)
-        self.project_directory = project_directory
+        self.project_directory = current_project_directory
+        self.destination_directory = None  # Variable to store the selected destination directory
 
         self.layout = QVBoxLayout()
 
@@ -45,7 +49,7 @@ class OptionsWindow(QDialog):
         self.incompressible_radio.toggled.connect(self.update_options)
         self.options_combo.currentIndexChanged.connect(self.update_subdirectories)
 
-        self.copy_button = QPushButton("Next")
+        self.copy_button = QPushButton("Copy Tutorial to Current Project")
         self.copy_button.clicked.connect(self.copy_selected_option)
         self.layout.addWidget(self.copy_button)
 
@@ -84,7 +88,7 @@ class OptionsWindow(QDialog):
         elif selected_option == "rhoCentralFoam":
             self.options_combo.setToolTip(
                 "rhoCentralFoam is an OpenFOAM solver for simulating compressible, transient, and turbulent flows using a central-upwind scheme for density-based solvers.")
-            subdirectories = [""]
+            subdirectories = ["biconic25-55Run35", "LadenburgJet60psi", "shockTube"]
         elif selected_option == "rhoPimpleFoam":
             self.options_combo.setToolTip(
                 "rhoPimpleFoam is an OpenFOAM solver that's suitable for transient, incompressible flows with turbulence modeling, using the PIMPLE (PISO-SIMPLE) algorithm to solve the Navier-Stokes equations.")
@@ -134,72 +138,11 @@ class OptionsWindow(QDialog):
 
         if source_directory:
             source_directory = os.path.join(source_directory, selected_subdirectory)
-            destination_directory = os.path.join(self.project_directory, selected_option, selected_subdirectory)
+            self.destination_directory = os.path.join(self.project_directory, selected_option, selected_subdirectory)
 
             try:
-                shutil.copytree(source_directory, destination_directory, symlinks=True, dirs_exist_ok=True)
-                self.accept()
-
-                QMessageBox.information(self, "Success",
-                                        f"Copying {selected_option}/{selected_subdirectory} successful.")
-
-                # Open the EditControlDictWindow immediately after copying
-                edit_control_dict_window = EditControlDictWindow(
-                    os.path.join(destination_directory, 'system/controlDict'))
-                if edit_control_dict_window.exec() == QDialog.DialogCode.Accepted:
-                    # Handle any actions after the user edits and saves the controlDict file
-                    QMessageBox.information(self, "Success",
-                                            f"ControlDict edited successfully")
-
-                # Open the EditControlDictWindow immediately after copying
-                edit_fv_schemes_window = EditFvSchemesWindow(
-                    os.path.join(destination_directory, 'system/fvSchemes'))
-                if edit_fv_schemes_window.exec() == QDialog.DialogCode.Accepted:
-                    # Handle any actions after the user edits and saves the controlDict file
-                    QMessageBox.information(self, "Success",
-                                            f"fvSchemes edited successfully")
-
-                # After copying, change the current directory to the destination and run "./Allrun" in WSL
-                print(destination_directory)
-                wsl_path = '/mnt/c/' + destination_directory.replace('\\', '/').lstrip('C:').lstrip('/')
-
-                # Build the WSL command to run "./Allrun" and capture the output
-                wsl_command = "cd '{}' && source /usr/lib/openfoam/openfoam2306/etc/bashrc && blockMesh && icoFoam && foamToVTK".format(
-                    wsl_path)
-
-                # Launch a cmd window while running the WSL command and capturing the output
-                cmd_command = f"wsl -e bash -c \"{wsl_command}\""
-                process = subprocess.Popen(cmd_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True,
-                                           text=True)
-
-                # Create a dialog to display the progress
-                progress_dialog = QDialog(self)
-                progress_dialog.setWindowTitle("Progress")
-                progress_dialog.setGeometry(200, 200, 700, 400)
-                progress_layout = QVBoxLayout(progress_dialog)
-                progress_label = QLabel("Running WSL command:")
-                progress_layout.addWidget(progress_label)
-                progress_text = QTextEdit(progress_dialog)
-                progress_text.setReadOnly(True)
-                progress_layout.addWidget(progress_text)
-                progress_dialog.setLayout(progress_layout)
-                progress_dialog.show()
-
-                # Read and display the output while the process is running
-                while process.poll() is None:
-                    output_line = process.stdout.readline()
-                    progress_text.append(output_line)
-                    QApplication.processEvents()
-
-                # Capture any remaining output
-                output, error = process.communicate()
-                progress_text.append(output)
-                progress_text.append(error)
-
-                progress_dialog.exec()
-
-                QMessageBox.information(self, "Success",
-                                        "Please open VTK file from your project directory in Paraview")
-
+                shutil.copytree(source_directory, self.destination_directory, symlinks=True, dirs_exist_ok=True)
+                QMessageBox.information(self, "Success", f'Tutorial copied to: {self.destination_directory}')
+                self.close()
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Error copying directory: {e}")
+                QMessageBox.critical(self, "Error", f'Failed to copy tutorial. Error: {str(e)}')
